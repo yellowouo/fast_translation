@@ -1,0 +1,873 @@
+import { ScrollView } from "std-widgets.slint";
+
+// ── Floating ball ────────────────────────────────────────────────
+export component FloatingBall inherits Window {
+    title: "Fast Translation";
+
+    no-frame: true;
+    always-on-top: true;
+    width: 20px;
+    height: 20px;
+    background: transparent;
+    in-out property <bool> visible-ball: true;
+    callback hovered();
+    callback clicked();
+
+    if root.visible-ball: Rectangle {
+        width: 14px; height: 14px; border-radius: 7px;
+        background: @linear-gradient(135deg, #f0a4c4, #db5590);
+        border-width: 1px; border-color: rgba(255, 255, 255, 0.18);
+        x: 3px; y: 3px;
+        drop-shadow-color: rgba(219, 85, 144, 0.45);
+        drop-shadow-offset-y: 1px; drop-shadow-blur: 6px;
+    }
+    ball-area := TouchArea {
+        changed has-hover => { if (self.has-hover) { root.hovered(); } }
+        clicked => { root.clicked(); }
+    }
+}
+
+export component KeepAlive inherits Window {
+    title: "Fast Translation";
+
+    width: 0px;
+    height: 0px;
+    no-frame: true;
+    background: transparent;
+    always-on-top: true;
+}
+
+// ── 矢量图标（浅色单色风格，对应 style.jpg） ──
+component SpeakerIcon inherits Rectangle {
+    in property <brush> icon-color: #8b909a;
+    width: 16px; height: 16px;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M4 9.5 L8 9.5 L12.5 5 L12.5 19 L8 14.5 L4 14.5 Z";
+        fill: parent.icon-color;
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M15.5 9 A4.5 4.5 0 0 1 15.5 15";
+        stroke: parent.icon-color;
+        stroke-width: 1.8px;
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M18 6.5 A8 8 0 0 1 18 17.5";
+        stroke: parent.icon-color;
+        stroke-width: 1.8px;
+    }
+}
+
+component CopyIcon inherits Rectangle {
+    in property <brush> icon-color: #8b909a;
+    width: 16px; height: 16px;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M9 8.5 H20 V19.5 H9 Z";
+        stroke: parent.icon-color;
+        stroke-width: 1.8px;
+    }
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M5.5 15.5 V4.5 H16.5";
+        stroke: parent.icon-color;
+        stroke-width: 1.8px;
+    }
+}
+
+component CloseIcon inherits Rectangle {
+    in property <brush> icon-color: #8b909a;
+    width: 10px; height: 10px;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 10; viewbox-height: 10;
+        commands: "M1.5 1.5 L8.5 8.5 M8.5 1.5 L1.5 8.5";
+        stroke: parent.icon-color;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+    }
+}
+
+component CheckmarkIcon inherits Rectangle {
+    in property <brush> icon-color: #ffffff;
+    width: 10px; height: 10px;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 12; viewbox-height: 12;
+        commands: "M2.5 6.5 L4.8 9 L9.5 3";
+        stroke: parent.icon-color;
+        stroke-width: 2px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+    }
+}
+
+component SettingsGearIcon inherits Rectangle {
+    in property <brush> icon-color: #c4587e;
+    width: 15px; height: 15px;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z";
+        fill: parent.icon-color;
+    }
+}
+
+component KeyboardIcon inherits Rectangle {
+    in property <brush> icon-color: #c4587e;
+    width: 15px; height: 15px;
+    Path {
+        width: 100%; height: 100%;
+        viewbox-width: 24; viewbox-height: 24;
+        commands: "M20 5H4c-1.1 0-1.99.9-1.99 2L2 17c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm-9 3h2v2h-2V8zm0 3h2v2h-2v-2zM8 8h2v2H8V8zm0 3h2v2H8v-2zm-1 2H5v-2h2v2zm0-3H5V8h2v2zm9 7H8v-2h8v2zm0-4h-2v-2h2v2zm0-3h-2V8h2v2zm3 3h-2v-2h2v2zm0-3h-2V8h2v2z";
+        fill: parent.icon-color;
+    }
+}
+
+// UI 沙盒：只包含 TranslationPopup，浅色主题（style.jpg 风格）。
+// 所有高度由文本实测派生，无估算像素值。
+export component TranslationPopup inherits Window {
+    title: "Fast Translation";
+
+    no-frame: true;
+    always-on-top: true;
+    default-font-family: "Microsoft YaHei UI, Segoe UI, PingFang SC, HarmonyOS Sans SC, Source Han Sans SC, sans-serif";
+    width: 440px;
+    // 声明式高度：窗口高度直接绑定内容总高
+    height: root.total-height;
+    background: transparent;
+
+    in-out property <string> original-text: "";
+    in property <string> translated-text: "";
+    in property <bool> is-loading: false;
+    in property <string> error-message: "";
+    in-out property <bool> source-expanded: false;
+
+    callback play-pronunciation();
+    callback play-source();
+    callback copy-result();
+    callback copy-source();
+    callback close-popup();
+    callback header-moved();
+    callback source-edited(string);
+
+    // ════════════════════════════════════════════════════════════════════════════════
+    // 🎨【字体与字号调节参数区 - 可在此自由修改调试】
+    // ════════════════════════════════════════════════════════════════════════════════
+    // 1. 全局字体族
+    property <string> body-font: "Microsoft YaHei UI, Segoe UI, PingFang SC, HarmonyOS Sans SC, Source Han Sans SC, sans-serif";
+
+    // 2. 字号大小 (Font Size)
+    in-out property <length> src-font-size: 14.5px;      // 原文字号 (默认 14.5px)
+    in-out property <length> result-font-size: 17px;     // 译文字号 (默认 17px)
+
+    // 3. 字距微调 (Letter Spacing)
+    in-out property <length> src-letter-spacing: 0.2px; // 原文字距
+    in-out property <length> res-letter-spacing: 0.3px; // 译文字距
+
+    // 4. 尺寸体系与内边距
+    property <length> pad: 14px;          // 窗口外层内边距
+    property <length> gap: 8px;           // 卡片间距
+    property <length> header-h: 24px;     // 标题栏高
+    property <length> action-bar-h: 28px; // 卡片底部按钮条高
+    property <length> card-pad-t: 8px;    // 卡片文本区上内边距
+    property <length> card-pad-b: 4px;    // 卡片文本区下内边距
+    property <length> text-pad-l: 12px;   // 文本区左内边距
+    property <length> text-pad-r: 22px;   // 右内边距加大，给滚动条留空间不遮字
+    property <length> text-area-w: root.width - 2 * root.pad - 2 * 1px - root.text-pad-l - root.text-pad-r;
+
+    // 单行行高探针
+    src-line-probe := Text {
+        font-family: root.body-font;
+        text: "X"; font-size: root.src-font-size;
+        color: transparent; width: 0px; height: 0px;
+    }
+    result-line-probe := Text {
+        font-family: root.body-font;
+        text: "X"; font-size: root.result-font-size; font-weight: 600;
+        color: transparent; width: 0px; height: 0px;
+    }
+    property <length> src-line-h: src-line-probe.preferred-height;
+    property <length> result-line-h: result-line-probe.preferred-height;
+
+    // 全文精确像素实测（由 Slint 渲染引擎实测精确物理行高，无任何多余空白）
+    measure-src := Text {
+        font-family: root.body-font;
+        text: root.original-text;
+        font-size: root.src-font-size;
+        letter-spacing: root.src-letter-spacing;
+        color: transparent;
+        wrap: word-wrap;
+        width: root.text-area-w;
+        height: 0px;
+    }
+    measure-result := Text {
+        font-family: root.body-font;
+        text: root.translated-text;
+        font-size: root.result-font-size;
+        font-weight: 600;
+        letter-spacing: root.res-letter-spacing;
+        color: transparent;
+        wrap: word-wrap;
+        width: root.text-area-w;
+        height: 0px;
+    }
+    property <length> src-measured-h: measure-src.preferred-height;
+    property <length> result-measured-h: measure-result.preferred-height;
+
+    // 各状态卡片高度
+    property <length> collapsed-src-card-h: root.card-pad-t + 2 * root.src-line-h + root.card-pad-b + root.action-bar-h;
+    property <length> expanded-src-card-h: root.card-pad-t + Math.min(root.src-measured-h, 10 * root.src-line-h) + root.card-pad-b + root.action-bar-h;
+    property <length> result-card-h: root.card-pad-t + Math.min(root.result-measured-h, 8 * root.result-line-h) + root.card-pad-b + root.action-bar-h;
+    property <length> idle-card-h: root.card-pad-t + 3 * root.result-line-h + root.card-pad-b;
+
+    property <bool> src-fits-collapsed: root.src-measured-h <= 2 * root.src-line-h;
+
+    property <length> total-height: root.pad + root.header-h + root.gap
+        + (root.source-expanded ? root.expanded-src-card-h : root.collapsed-src-card-h)
+        + root.gap
+        + ((root.is-loading || root.error-message != "" || root.original-text == "") ? root.idle-card-h : root.result-card-h)
+        + root.pad;
+
+    // ══ 主题色 ══
+    property <color> accent: #c4587e;
+    property <color> icon-color: #8b909a;
+    property <color> icon-color-hover: #565b63;
+    property <color> src-text-color: #373a40;
+    property <color> res-text-color: #1a1b1f;
+
+    Rectangle {
+        width: 100%; height: 100%;
+        background: #ffffff;
+        border-radius: 10px;
+        border-width: 1px; border-color: rgba(0, 0, 0, 0.08);
+        clip: true;
+        drop-shadow-color: rgba(0, 0, 0, 0.18);
+        drop-shadow-offset-y: 8px; drop-shadow-blur: 24px;
+
+        VerticalLayout {
+            width: 100%; height: 100%;
+            padding: root.pad;
+            spacing: root.gap;
+
+            // ══ HEADER ══
+            Rectangle {
+                height: root.header-h;
+                Text {
+                    text: "翻译"; font-size: 12px; font-weight: 600;
+                    font-family: root.body-font;
+                    color: root.accent; letter-spacing: 0.5px;
+                    vertical-alignment: center;
+                }
+                TouchArea { moved => { root.header-moved(); } }
+            }
+
+            // ══ SOURCE CARD（浅灰面板） ══
+            Rectangle {
+                height: root.source-expanded ? root.expanded-src-card-h : root.collapsed-src-card-h;
+                border-radius: 8px;
+                background: #f5f6f8;
+                border-width: 1px; border-color: rgba(0, 0, 0, 0.04);
+                clip: true;
+
+                // ── 原文内容区 ──
+                Rectangle {
+                    y: 0; width: 100%;
+                    height: (root.source-expanded ? root.expanded-src-card-h : root.collapsed-src-card-h) - root.action-bar-h;
+                    clip: true;
+                    HorizontalLayout {
+                        width: 100%; height: 100%;
+                        padding-left: root.text-pad-l; padding-right: root.text-pad-r;
+                        padding-top: root.card-pad-t; padding-bottom: root.card-pad-b;
+
+                        if !root.source-expanded: Rectangle {
+                            width: 100%; height: 100%;
+                            TextInput {
+                                width: 100%; height: 100%;
+                                text <=> root.original-text;
+                                font-family: root.body-font;
+                                font-size: root.src-font-size;
+                                color: root.src-text-color;
+                                letter-spacing: root.src-letter-spacing;
+                                wrap: word-wrap;
+                                selection-background-color: rgba(196, 88, 126, 0.22);
+                                selection-foreground-color: root.src-text-color;
+                                edited => {
+                                    root.source-edited(self.text);
+                                }
+                                accepted => {
+                                    root.source-edited(self.text);
+                                }
+                            }
+                            if root.original-text == "": Text {
+                                text: "输入或粘贴要翻译的内容...";
+                                font-family: root.body-font;
+                                font-size: root.src-font-size;
+                                color: #a0a4ac;
+                                vertical-alignment: top;
+                            }
+                        }
+                        if root.source-expanded: ScrollView {
+                            width: 100%; height: 100%;
+                            viewport-width: self.width;
+                            viewport-height: root.src-measured-h;
+                            Rectangle {
+                                width: parent.viewport-width;
+                                height: root.src-measured-h;
+                                TextInput {
+                                    width: 100%; height: 100%;
+                                    text <=> root.original-text;
+                                    font-family: root.body-font;
+                                    font-size: root.src-font-size;
+                                    color: root.src-text-color;
+                                    letter-spacing: root.src-letter-spacing;
+                                    wrap: word-wrap;
+                                    horizontal-alignment: left; vertical-alignment: top;
+                                    selection-background-color: rgba(196, 88, 126, 0.22);
+                                    selection-foreground-color: root.src-text-color;
+                                    edited => {
+                                        root.source-edited(self.text);
+                                    }
+                                    accepted => {
+                                        root.source-edited(self.text);
+                                    }
+                                }
+                                if root.original-text == "": Text {
+                                    text: "输入或粘贴要翻译的内容...";
+                                    font-family: root.body-font;
+                                    font-size: root.src-font-size;
+                                    color: #a0a4ac;
+                                    vertical-alignment: top;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ── 原文按钮条（透明底，与面板融为一体） ──
+                Rectangle {
+                    y: (root.source-expanded ? root.expanded-src-card-h : root.collapsed-src-card-h) - root.action-bar-h;
+                    width: 100%; height: root.action-bar-h;
+                    HorizontalLayout {
+                        width: 100%; height: 100%;
+                        padding-left: 6px; padding-right: 8px;
+                        HorizontalLayout {
+                            spacing: 2px;
+                            Rectangle {
+                                width: 26px; height: 22px; border-radius: 5px; y: 3px;
+                                background: play-src.has-hover ? rgba(0, 0, 0, 0.06) : transparent;
+                                SpeakerIcon {
+                                    icon-color: play-src.has-hover ? root.icon-color-hover : root.icon-color;
+                                }
+                                play-src := TouchArea { clicked => { root.play-source(); } }
+                            }
+                            Rectangle {
+                                width: 26px; height: 22px; border-radius: 5px; y: 3px;
+                                background: copy-src.has-hover ? rgba(0, 0, 0, 0.06) : transparent;
+                                CopyIcon {
+                                    icon-color: copy-src.has-hover ? root.icon-color-hover : root.icon-color;
+                                }
+                                copy-src := TouchArea { clicked => { root.copy-source(); } }
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                        if !root.src-fits-collapsed: Rectangle {
+                            min-width: 84px; height: 22px; border-radius: 5px; y: 3px;
+                            background: expand-touch.has-hover ? rgba(0, 0, 0, 0.06) : transparent;
+                            HorizontalLayout {
+                                spacing: 4px; padding-left: 10px; padding-right: 10px;
+                                Text {
+                                    text: root.source-expanded ? "折叠内容" : "显示全部";
+                                    font-family: root.body-font;
+                                    font-size: 11px; color: root.icon-color; vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.source-expanded ? "▲" : "▼";
+                                    font-size: 8px; color: root.icon-color; vertical-alignment: center;
+                                }
+                            }
+                            expand-touch := TouchArea {
+                                clicked => { root.source-expanded = !root.source-expanded; }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ══ TRANSLATION CARD（白底，无面板边框） ══
+            Rectangle {
+                height: (root.is-loading || root.error-message != "" || root.original-text == "") ? root.idle-card-h : root.result-card-h;
+                border-radius: 8px;
+                clip: true;
+
+                if root.is-loading: HorizontalLayout {
+                    width: 100%; height: 100%;
+                    alignment: center;
+                    Text {
+                        text: "正在翻译…"; font-size: 13px; font-family: root.body-font;
+                        color: #9aa0a8; vertical-alignment: center;
+                    }
+                }
+
+                if !root.is-loading && root.error-message == "" && root.original-text == "": HorizontalLayout {
+                    width: 100%; height: 100%;
+                    alignment: center;
+                    Text {
+                        text: "等待输入内容…"; font-size: 12px; font-family: root.body-font;
+                        color: #b0b4ba; vertical-alignment: center;
+                    }
+                }
+
+                if !root.is-loading && root.error-message == "" && root.original-text != "": Rectangle {
+                    width: 100%; height: 100%;
+                    // ── 译文内容区 ──
+                    Rectangle {
+                        y: 0; width: 100%;
+                        height: root.result-card-h - root.action-bar-h;
+                        clip: true;
+                        HorizontalLayout {
+                            width: 100%; height: 100%;
+                            padding-left: 13px; padding-right: root.text-pad-r;
+                            padding-top: root.card-pad-t; padding-bottom: root.card-pad-b;
+                            ScrollView {
+                                width: 100%; height: 100%;
+                                viewport-width: self.width;
+                                viewport-height: root.result-measured-h;
+                                TextInput {
+                                    width: parent.viewport-width;
+                                    text: root.translated-text;
+                                    font-family: root.body-font;
+                                    font-size: root.result-font-size;
+                                    font-weight: 600;
+                                    color: root.res-text-color;
+                                    letter-spacing: root.res-letter-spacing;
+                                    read-only: true; wrap: word-wrap;
+                                    horizontal-alignment: left; vertical-alignment: top;
+                                    selection-background-color: rgba(196, 88, 126, 0.18);
+                                    selection-foreground-color: root.res-text-color;
+                                }
+                            }
+                        }
+                    }
+                    // ── 译文按钮条 ──
+                    Rectangle {
+                        y: root.result-card-h - root.action-bar-h;
+                        width: 100%; height: root.action-bar-h;
+                        HorizontalLayout {
+                            width: 100%; height: 100%;
+                            padding-left: 2px; spacing: 2px;
+                            Rectangle {
+                                width: 26px; height: 22px; border-radius: 5px; y: 3px;
+                                background: play-res.has-hover ? rgba(0, 0, 0, 0.06) : transparent;
+                                SpeakerIcon {
+                                    icon-color: play-res.has-hover ? root.icon-color-hover : root.icon-color;
+                                }
+                                play-res := TouchArea { clicked => { root.play-pronunciation(); } }
+                            }
+                            Rectangle {
+                                width: 26px; height: 22px; border-radius: 5px; y: 3px;
+                                background: copy-res.has-hover ? rgba(0, 0, 0, 0.06) : transparent;
+                                CopyIcon {
+                                    icon-color: copy-res.has-hover ? root.icon-color-hover : root.icon-color;
+                                }
+                                copy-res := TouchArea { clicked => { root.copy-result(); } }
+                            }
+                        }
+                    }
+                }
+
+                if !root.is-loading && root.error-message != "": HorizontalLayout {
+                    width: 100%; height: 100%;
+                    padding: 8px;
+                    Text {
+                        text: root.error-message; font-family: root.body-font;
+                        font-size: 12px; color: #c04848; wrap: word-wrap; vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── 快捷键设置窗口（风格与 TranslationPopup 保持一致） ────────────────────────
+export component HotkeySettingsWindow inherits Window {
+    title: "Fast Translation - 设置";
+
+    no-frame: true;
+    always-on-top: true;
+    default-font-family: "Microsoft YaHei UI, Segoe UI, PingFang SC, HarmonyOS Sans SC, Source Han Sans SC, sans-serif";
+    width: 380px;
+    height: 350px;
+    background: transparent;
+
+    in-out property <string> current-hotkey: "Alt+Q";
+    in-out property <string> current-toggle-hotkey: "Alt+Shift+Q";
+    in-out property <int> recording-target: 0; // 0: 无, 1: 翻译快捷键, 2: 启停快捷键
+    in-out property <bool> hotkeys-enabled: true;
+    in-out property <bool> drag-copy-fallback: true;
+    in-out property <string> tip-message: "";
+
+    callback record-key-pressed(int, string, bool, bool, bool, bool);
+    callback start-recording(int);
+    callback stop-recording();
+    callback save-settings(string, string, bool, bool);
+    callback close-window();
+    callback header-moved();
+
+    property <color> accent: #c4587e;
+    property <color> accent-gradient-start: #f0a4c4;
+    property <color> accent-gradient-end: #db5590;
+
+    Rectangle {
+        width: 100%; height: 100%;
+        background: #ffffff;
+        border-radius: 10px;
+        border-width: 1px; border-color: rgba(0, 0, 0, 0.08);
+        clip: true;
+        drop-shadow-color: rgba(0, 0, 0, 0.18);
+        drop-shadow-offset-y: 8px; drop-shadow-blur: 24px;
+
+        VerticalLayout {
+            width: 100%; height: 100%;
+            padding: 14px;
+            spacing: 10px;
+
+            // ══ 标题栏 ══
+            Rectangle {
+                height: 24px;
+                // 将窗口拖拽 TouchArea 置于底层，避免遮挡右上角关闭按钮
+                TouchArea { moved => { root.header-moved(); } }
+
+                HorizontalLayout {
+                    width: 100%; height: 100%;
+                    spacing: 6px;
+                    SettingsGearIcon {
+                        y: 4px;
+                        icon-color: root.accent;
+                    }
+                    Text {
+                        text: "快捷键与取词设置"; font-size: 13px; font-weight: 600;
+                        color: root.accent; letter-spacing: 0.5px;
+                        vertical-alignment: center;
+                    }
+                    Rectangle { horizontal-stretch: 1; }
+                    Rectangle {
+                        width: 24px; height: 24px; border-radius: 4px;
+                        background: close-touch.has-hover ? rgba(0, 0, 0, 0.08) : transparent;
+                        CloseIcon {
+                            x: 7px; y: 7px;
+                            icon-color: close-touch.has-hover ? root.accent : #8b909a;
+                        }
+                        close-touch := TouchArea {
+                            clicked => { root.close-window(); }
+                        }
+                    }
+                }
+            }
+
+            // ══ 快捷键配置面板 ══
+            Rectangle {
+                border-radius: 8px;
+                background: #f5f6f8;
+                border-width: 1px; border-color: rgba(0, 0, 0, 0.04);
+
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    // 快捷键 1: 翻译唤醒快捷键
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: center;
+
+                        Text {
+                            text: "翻译唤醒快捷键"; font-size: 12px; font-weight: 500;
+                            color: #3c4048; vertical-alignment: center;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        hotkey-focus := FocusScope {
+                            width: 160px;
+                            height: 28px;
+                            enabled: root.recording-target == 1;
+                            key-pressed(event) => {
+                                if (root.recording-target != 1) {
+                                    return reject;
+                                }
+                                if (event.text == Key.Escape) {
+                                    root.recording-target = 0;
+                                    root.stop-recording();
+                                    return accept;
+                                }
+                                root.record-key-pressed(
+                                    1,
+                                    event.text,
+                                    event.modifiers.control,
+                                    event.modifiers.alt,
+                                    event.modifiers.shift,
+                                    event.modifiers.meta
+                                );
+                                return accept;
+                            }
+
+                            Rectangle {
+                                width: 100%; height: 100%;
+                                background: root.recording-target == 1 ? #fff3f7 : #ffffff;
+                                border-radius: 6px;
+                                border-width: root.recording-target == 1 ? 2px : 1px;
+                                border-color: root.recording-target == 1 ? root.accent-gradient-end : (hotkey-touch.has-hover ? rgba(196, 88, 126, 0.4) : rgba(0, 0, 0, 0.12));
+                                drop-shadow-color: root.recording-target == 1 ? rgba(219, 85, 144, 0.25) : transparent;
+                                drop-shadow-blur: 4px;
+
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px;
+                                    spacing: 6px;
+
+                                    KeyboardIcon {
+                                        y: 6px;
+                                        icon-color: root.recording-target == 1 ? root.accent-gradient-end : root.accent;
+                                    }
+
+                                    if root.recording-target != 1: Text {
+                                        text: root.current-hotkey;
+                                        font-size: 12px; font-weight: 700;
+                                        color: root.accent;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if root.recording-target == 1: Text {
+                                        text: "按下快捷键...";
+                                        font-size: 11px; font-weight: 600;
+                                        color: root.accent-gradient-end;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Rectangle { horizontal-stretch: 1; }
+
+                                    if root.recording-target != 1: Text {
+                                        text: "修改"; font-size: 11px; color: #8b909a;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if root.recording-target == 1: Text {
+                                        text: "Esc取消"; font-size: 10px; color: #c04848; font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                hotkey-touch := TouchArea {
+                                    clicked => {
+                                        root.recording-target = 1;
+                                        hotkey-focus.focus();
+                                        root.start-recording(1);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // 快捷键 2: 程序启停快捷键
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: center;
+
+                        Text {
+                            text: "程序启停快捷键"; font-size: 12px; font-weight: 500;
+                            color: #3c4048; vertical-alignment: center;
+                        }
+
+                        Rectangle { horizontal-stretch: 1; }
+
+                        toggle-focus := FocusScope {
+                            width: 160px;
+                            height: 28px;
+                            enabled: root.recording-target == 2;
+                            key-pressed(event) => {
+                                if (root.recording-target != 2) {
+                                    return reject;
+                                }
+                                if (event.text == Key.Escape) {
+                                    root.recording-target = 0;
+                                    root.stop-recording();
+                                    return accept;
+                                }
+                                root.record-key-pressed(
+                                    2,
+                                    event.text,
+                                    event.modifiers.control,
+                                    event.modifiers.alt,
+                                    event.modifiers.shift,
+                                    event.modifiers.meta
+                                );
+                                return accept;
+                            }
+
+                            Rectangle {
+                                width: 100%; height: 100%;
+                                background: root.recording-target == 2 ? #fff3f7 : #ffffff;
+                                border-radius: 6px;
+                                border-width: root.recording-target == 2 ? 2px : 1px;
+                                border-color: root.recording-target == 2 ? root.accent-gradient-end : (toggle-touch.has-hover ? rgba(196, 88, 126, 0.4) : rgba(0, 0, 0, 0.12));
+                                drop-shadow-color: root.recording-target == 2 ? rgba(219, 85, 144, 0.25) : transparent;
+                                drop-shadow-blur: 4px;
+
+                                HorizontalLayout {
+                                    padding-left: 8px; padding-right: 8px;
+                                    spacing: 6px;
+
+                                    KeyboardIcon {
+                                        y: 6px;
+                                        icon-color: root.recording-target == 2 ? root.accent-gradient-end : root.accent;
+                                    }
+
+                                    if root.recording-target != 2: Text {
+                                        text: root.current-toggle-hotkey;
+                                        font-size: 12px; font-weight: 700;
+                                        color: root.accent;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if root.recording-target == 2: Text {
+                                        text: "按下快捷键...";
+                                        font-size: 11px; font-weight: 600;
+                                        color: root.accent-gradient-end;
+                                        vertical-alignment: center;
+                                    }
+
+                                    Rectangle { horizontal-stretch: 1; }
+
+                                    if root.recording-target != 2: Text {
+                                        text: "修改"; font-size: 11px; color: #8b909a;
+                                        vertical-alignment: center;
+                                    }
+
+                                    if root.recording-target == 2: Text {
+                                        text: "Esc取消"; font-size: 10px; color: #c04848; font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+
+                                toggle-touch := TouchArea {
+                                    clicked => {
+                                        root.recording-target = 2;
+                                        toggle-focus.focus();
+                                        root.start-recording(2);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ══ 选项配置面板 ══
+            Rectangle {
+                border-radius: 8px;
+                background: #f5f6f8;
+                border-width: 1px; border-color: rgba(0, 0, 0, 0.04);
+
+                VerticalLayout {
+                    padding: 10px;
+                    spacing: 8px;
+
+                    // 开关 1: 启用快捷键
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            width: 18px; height: 18px; border-radius: 4px; y: 1px;
+                            background: root.hotkeys-enabled ? root.accent : #e0e2e6;
+                            if root.hotkeys-enabled: CheckmarkIcon {
+                                x: 4px; y: 4px;
+                                icon-color: #ffffff;
+                            }
+                            TouchArea { clicked => { root.hotkeys-enabled = !root.hotkeys-enabled; } }
+                        }
+                        Text {
+                            text: "启用全局快捷键监听"; font-size: 12px; color: #3c4048;
+                            vertical-alignment: center;
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+
+                    // 开关 2: 拖拽模拟复制智能降级
+                    HorizontalLayout {
+                        spacing: 8px;
+                        Rectangle {
+                            width: 18px; height: 18px; border-radius: 4px; y: 1px;
+                            background: root.drag-copy-fallback ? root.accent : #e0e2e6;
+                            if root.drag-copy-fallback: CheckmarkIcon {
+                                x: 4px; y: 4px;
+                                icon-color: #ffffff;
+                            }
+                            TouchArea { clicked => { root.drag-copy-fallback = !root.drag-copy-fallback; } }
+                        }
+                        VerticalLayout {
+                            spacing: 2px;
+                            Text {
+                                text: "全应用划词兼容 (UIA + 拖拽模拟复制)"; font-size: 12px; color: #3c4048;
+                            }
+                            Text {
+                                text: "支持 VS Code, JetBrains, 微信, 终端等所有软件"; font-size: 10px; color: #8b909a;
+                            }
+                        }
+                        Rectangle { horizontal-stretch: 1; }
+                    }
+                }
+            }
+
+            if root.tip-message != "": Text {
+                text: root.tip-message; font-size: 11px; color: #388e3c;
+                horizontal-alignment: center;
+            }
+
+            Rectangle { vertical-stretch: 1; }
+
+            // ══ 底部操作按钮 ══
+            HorizontalLayout {
+                spacing: 8px;
+                Rectangle { horizontal-stretch: 1; }
+
+                // 取消按钮
+                Rectangle {
+                    width: 72px; height: 28px; border-radius: 6px;
+                    background: cancel-touch.has-hover ? rgba(0, 0, 0, 0.08) : #e8eaed;
+                    Text {
+                        text: "取消"; font-size: 12px; color: #565b63;
+                        horizontal-alignment: center; vertical-alignment: center;
+                    }
+                    cancel-touch := TouchArea { clicked => { root.close-window(); } }
+                }
+
+                // 保存设置按钮
+                Rectangle {
+                    width: 96px; height: 28px; border-radius: 6px;
+                    background: @linear-gradient(135deg, root.accent-gradient-start, root.accent-gradient-end);
+                    drop-shadow-color: rgba(219, 85, 144, 0.35);
+                    drop-shadow-offset-y: 1px; drop-shadow-blur: 4px;
+                    Text {
+                        text: "保存设置"; font-size: 12px; font-weight: 600; color: #ffffff;
+                        horizontal-alignment: center; vertical-alignment: center;
+                    }
+                    save-touch := TouchArea {
+                        clicked => {
+                            root.save-settings(
+                                root.current-hotkey,
+                                root.current-toggle-hotkey,
+                                root.hotkeys-enabled,
+                                root.drag-copy-fallback
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

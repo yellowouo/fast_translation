@@ -1,0 +1,27 @@
+[baidu]
+# 百度翻译开放平台申请的 APP ID 与 密钥 (Secret Key)
+appid = ""
+secret_key = ""
+# 源语言与目标语言（auto 为自动识别，zh 为中文，en 为英文）
+from = "auto"
+to = "zh"
+# 翻译引擎模式：
+#   "general" -> 百度通用文本翻译（毫秒级极速响应，适合日常查词）
+#   "llm"     -> 百度大模型文本翻译（文心大模型赋能，语境更地道自然）
+mode = "general"
+
+[app]
+# 本地 LRU 缓存大小（条数）
+cache_size = 512
+# 划词后是否自动弹出翻译悬浮球
+auto_translate = true
+
+[hotkey]
+# 全局唤醒翻译快捷键（支持在右键托盘“设置”中可视化修改）
+translate = "Alt+Q"
+# 全局启用/禁用程序快捷键（随时一键暂停/恢复划词翻译）
+toggle = "Alt+W"
+# 是否启用划词与全局快捷键
+enabled = true
+# 拖拽划词取词降级模拟复制
+drag_copy_fallback = true
