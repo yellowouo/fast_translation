@@ -32,6 +32,7 @@ use crate::AppEvent;
 
 const WM_TRAY_CALLBACK: u32 = WM_APP + 100;
 const WM_UPDATE_HOTKEY_MSG: u32 = WM_APP + 101;
+const WM_SET_RECORDING_MSG: u32 = WM_APP + 102;
 const TRAY_ICON_ID: u32 = 1001;
 const HOTKEY_TRANSLATE_ID: i32 = 100;
 const HOTKEY_TOGGLE_ID: i32 = 101;
@@ -44,7 +45,7 @@ const ID_TRAY_SETTINGS: usize = 2005;
 const ID_TRAY_EXIT: usize = 2006;
 
 pub static HOTKEYS_ENABLED: AtomicBool = AtomicBool::new(true);
-pub static SETTINGS_OPEN: AtomicBool = AtomicBool::new(false);
+pub static IS_RECORDING_HOTKEY: AtomicBool = AtomicBool::new(false);
 static CURRENT_HOTKEY_STR: LazyLock<Mutex<String>> = LazyLock::new(|| Mutex::new("Alt+Q".into()));
 static CURRENT_TOGGLE_HOTKEY_STR: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new("Alt+Shift+Q".into()));
@@ -72,6 +73,7 @@ impl TrayIcon {
     ) -> Result<Self> {
         let _ = APP_EVENT_SENDER.set(tx);
         HOTKEYS_ENABLED.store(initial_enabled, Ordering::SeqCst);
+        IS_RECORDING_HOTKEY.store(false, Ordering::SeqCst);
         *CURRENT_HOTKEY_STR.lock().unwrap() = initial_hotkey.clone();
         *CURRENT_TOGGLE_HOTKEY_STR.lock().unwrap() = initial_toggle_hotkey.clone();
         *CURRENT_MODE.lock().unwrap() = initial_mode;
@@ -188,11 +190,12 @@ impl TrayIcon {
         println!("[Tray] Updated tray translate mode to: {}", mode);
     }
 
-    /// 更新快捷键设置并重新注册（翻译唤醒与启停快捷键）
+    /// 更新快捷键设置并重新在托盘线程上注册
     pub fn update_hotkeys(new_hotkey: &str, new_toggle_hotkey: &str, enabled: bool) {
         *CURRENT_HOTKEY_STR.lock().unwrap() = new_hotkey.to_string();
         *CURRENT_TOGGLE_HOTKEY_STR.lock().unwrap() = new_toggle_hotkey.to_string();
         HOTKEYS_ENABLED.store(enabled, Ordering::SeqCst);
+        IS_RECORDING_HOTKEY.store(false, Ordering::SeqCst);
         if let Some(&raw_hwnd) = TRAY_HWND.get() {
             unsafe {
                 let hwnd = HWND(raw_hwnd as *mut _);
@@ -201,34 +204,20 @@ impl TrayIcon {
         }
     }
 
-    /// 打开/关闭设置窗口时设置状态并临时注销快捷键，防止按键冲突
-    pub fn set_settings_open(open: bool) {
-        SETTINGS_OPEN.store(open, Ordering::SeqCst);
+    /// 标记是否正在录制快捷键（录制期间在托盘线程安全暂停全局热键，录制完毕自动恢复）
+    pub fn set_recording_active(recording: bool) {
+        IS_RECORDING_HOTKEY.store(recording, Ordering::SeqCst);
         if let Some(&raw_hwnd) = TRAY_HWND.get() {
             unsafe {
                 let hwnd = HWND(raw_hwnd as *mut _);
-                if open {
-                    let _ = UnregisterHotKey(hwnd, HOTKEY_TRANSLATE_ID);
-                    let _ = UnregisterHotKey(hwnd, HOTKEY_TOGGLE_ID);
-                    println!("[Tray] Hotkeys temporarily unregistered while settings window is open.");
-                } else {
-                    let hotkey = CURRENT_HOTKEY_STR.lock().unwrap().clone();
-                    let toggle_hotkey = CURRENT_TOGGLE_HOTKEY_STR.lock().unwrap().clone();
-                    let _ = UnregisterHotKey(hwnd, HOTKEY_TRANSLATE_ID);
-                    let _ = UnregisterHotKey(hwnd, HOTKEY_TOGGLE_ID);
-                    register_global_hotkey(hwnd, HOTKEY_TOGGLE_ID, &toggle_hotkey);
-                    if HOTKEYS_ENABLED.load(Ordering::Relaxed) {
-                        register_global_hotkey(hwnd, HOTKEY_TRANSLATE_ID, &hotkey);
-                    }
-                    println!("[Tray] Hotkeys restored after settings window closed.");
-                }
+                let _ = PostMessageW(
+                    hwnd,
+                    WM_SET_RECORDING_MSG,
+                    WPARAM(if recording { 1 } else { 0 }),
+                    LPARAM(0),
+                );
             }
         }
-    }
-
-    /// 获取当前设置窗口是否处于打开状态
-    pub fn is_settings_open() -> bool {
-        SETTINGS_OPEN.load(Ordering::Relaxed)
     }
 
     /// 获取当前快捷键是否启用
@@ -270,7 +259,7 @@ unsafe extern "system" fn tray_wnd_proc(
             if hotkey_id == HOTKEY_TOGGLE_ID {
                 toggle_program_state(hwnd);
             } else if hotkey_id == HOTKEY_TRANSLATE_ID {
-                if SETTINGS_OPEN.load(Ordering::Relaxed) || !HOTKEYS_ENABLED.load(Ordering::Relaxed) {
+                if !HOTKEYS_ENABLED.load(Ordering::Relaxed) || IS_RECORDING_HOTKEY.load(Ordering::Relaxed) {
                     return LRESULT(0);
                 }
                 println!("[Hotkey] Global hotkey triggered!");
@@ -281,17 +270,33 @@ unsafe extern "system" fn tray_wnd_proc(
             LRESULT(0)
         }
         WM_UPDATE_HOTKEY_MSG => {
-            if !SETTINGS_OPEN.load(Ordering::Relaxed) {
+            let enabled = HOTKEYS_ENABLED.load(Ordering::SeqCst);
+            let hotkey = CURRENT_HOTKEY_STR.lock().unwrap().clone();
+            let toggle_hotkey = CURRENT_TOGGLE_HOTKEY_STR.lock().unwrap().clone();
+            let _ = UnregisterHotKey(hwnd, HOTKEY_TRANSLATE_ID);
+            let _ = UnregisterHotKey(hwnd, HOTKEY_TOGGLE_ID);
+            register_global_hotkey(hwnd, HOTKEY_TOGGLE_ID, &toggle_hotkey);
+            if enabled {
+                register_global_hotkey(hwnd, HOTKEY_TRANSLATE_ID, &hotkey);
+            }
+            update_tray_tooltip(hwnd, enabled);
+            LRESULT(0)
+        }
+        WM_SET_RECORDING_MSG => {
+            let recording = w_param.0 != 0;
+            let _ = UnregisterHotKey(hwnd, HOTKEY_TRANSLATE_ID);
+            let _ = UnregisterHotKey(hwnd, HOTKEY_TOGGLE_ID);
+            if !recording {
                 let enabled = HOTKEYS_ENABLED.load(Ordering::SeqCst);
                 let hotkey = CURRENT_HOTKEY_STR.lock().unwrap().clone();
                 let toggle_hotkey = CURRENT_TOGGLE_HOTKEY_STR.lock().unwrap().clone();
-                let _ = UnregisterHotKey(hwnd, HOTKEY_TRANSLATE_ID);
-                let _ = UnregisterHotKey(hwnd, HOTKEY_TOGGLE_ID);
                 register_global_hotkey(hwnd, HOTKEY_TOGGLE_ID, &toggle_hotkey);
                 if enabled {
                     register_global_hotkey(hwnd, HOTKEY_TRANSLATE_ID, &hotkey);
                 }
-                update_tray_tooltip(hwnd, enabled);
+                println!("[Tray] Hotkeys restored after recording finished.");
+            } else {
+                println!("[Tray] Hotkeys temporarily unregistered during key recording.");
             }
             LRESULT(0)
         }
@@ -316,7 +321,7 @@ unsafe fn toggle_program_state(hwnd: HWND) {
 
     let hotkey = CURRENT_HOTKEY_STR.lock().unwrap().clone();
     let _ = UnregisterHotKey(hwnd, HOTKEY_TRANSLATE_ID);
-    if new_state && !SETTINGS_OPEN.load(Ordering::Relaxed) {
+    if new_state && !IS_RECORDING_HOTKEY.load(Ordering::Relaxed) {
         register_global_hotkey(hwnd, HOTKEY_TRANSLATE_ID, &hotkey);
         println!("[Tray] 程序已启用 (运行中)");
     } else {
@@ -373,7 +378,6 @@ unsafe fn handle_menu_command(hwnd: HWND, id: usize) {
         }
         ID_TRAY_SETTINGS => {
             println!("[Tray] Opening hotkey settings...");
-            TrayIcon::set_settings_open(true);
             if let Some(tx) = APP_EVENT_SENDER.get() {
                 let _ = tx.send(AppEvent::OpenSettings);
             }
@@ -488,21 +492,37 @@ unsafe fn show_tray_menu(hwnd: HWND) {
     }
 }
 
-/// 注册全局快捷键
-unsafe fn register_global_hotkey(hwnd: HWND, id: i32, hotkey_str: &str) {
+/// 注册全局快捷键（自动解绑旧热键，支持 Windows 原生 MOD_NOREPEAT 及降级兼容）
+unsafe fn register_global_hotkey(hwnd: HWND, id: i32, hotkey_str: &str) -> bool {
+    let _ = UnregisterHotKey(hwnd, id);
     if let Some((mods, vk)) = parse_hotkey(hotkey_str) {
         let res = RegisterHotKey(hwnd, id, mods, vk.0 as u32);
         if res.is_ok() {
             println!("[Hotkey] Successfully registered hotkey (ID {}): {}", id, hotkey_str);
+            true
         } else {
-            eprintln!("[Hotkey] Failed to register hotkey (ID {}): {}", id, hotkey_str);
+            // 若包含 MOD_NOREPEAT 注册失败，尝试不带 MOD_NOREPEAT 注册（兼容老版本系统）
+            let mods_raw = mods.0 & !MOD_NOREPEAT.0;
+            let fallback_res = RegisterHotKey(hwnd, id, HOT_KEY_MODIFIERS(mods_raw), vk.0 as u32);
+            if fallback_res.is_ok() {
+                println!("[Hotkey] Successfully registered hotkey without MOD_NOREPEAT (ID {}): {}", id, hotkey_str);
+                true
+            } else {
+                let err = windows::Win32::Foundation::GetLastError();
+                eprintln!(
+                    "[Hotkey] Failed to register hotkey (ID {}): {} (Win32 Error: {:?})",
+                    id, hotkey_str, err
+                );
+                false
+            }
         }
     } else {
         eprintln!("[Hotkey] Invalid hotkey string: {}", hotkey_str);
+        false
     }
 }
 
-/// 解析类似 "Alt+Q", "Ctrl+Shift+D", "Alt+W" 的快捷键字符串
+/// 解析类似 "Alt+Q", "Ctrl+Shift+D", "F10", "Alt+`" 的快捷键字符串
 pub fn parse_hotkey(s: &str) -> Option<(HOT_KEY_MODIFIERS, VIRTUAL_KEY)> {
     let mut mods = MOD_NOREPEAT.0;
     let mut vk_opt = None;
@@ -514,14 +534,7 @@ pub fn parse_hotkey(s: &str) -> Option<(HOT_KEY_MODIFIERS, VIRTUAL_KEY)> {
             "CTRL" | "CONTROL" => mods |= MOD_CONTROL.0,
             "SHIFT" => mods |= MOD_SHIFT.0,
             "WIN" | "WINDOWS" => mods |= MOD_WIN.0,
-            s if s.len() == 1 => {
-                let c = s.chars().next().unwrap();
-                if c.is_ascii_alphabetic() {
-                    vk_opt = Some(VIRTUAL_KEY(c as u16));
-                } else if c.is_ascii_digit() {
-                    vk_opt = Some(VIRTUAL_KEY(c as u16));
-                }
-            }
+            // 功能键 F1 ~ F24
             "F1" => vk_opt = Some(VIRTUAL_KEY(0x70)),
             "F2" => vk_opt = Some(VIRTUAL_KEY(0x71)),
             "F3" => vk_opt = Some(VIRTUAL_KEY(0x72)),
@@ -534,9 +547,55 @@ pub fn parse_hotkey(s: &str) -> Option<(HOT_KEY_MODIFIERS, VIRTUAL_KEY)> {
             "F10" => vk_opt = Some(VIRTUAL_KEY(0x79)),
             "F11" => vk_opt = Some(VIRTUAL_KEY(0x7A)),
             "F12" => vk_opt = Some(VIRTUAL_KEY(0x7B)),
+            "F13" => vk_opt = Some(VIRTUAL_KEY(0x7C)),
+            "F14" => vk_opt = Some(VIRTUAL_KEY(0x7D)),
+            "F15" => vk_opt = Some(VIRTUAL_KEY(0x7E)),
+            "F16" => vk_opt = Some(VIRTUAL_KEY(0x7F)),
+            "F17" => vk_opt = Some(VIRTUAL_KEY(0x80)),
+            "F18" => vk_opt = Some(VIRTUAL_KEY(0x81)),
+            "F19" => vk_opt = Some(VIRTUAL_KEY(0x82)),
+            "F20" => vk_opt = Some(VIRTUAL_KEY(0x83)),
+            "F21" => vk_opt = Some(VIRTUAL_KEY(0x84)),
+            "F22" => vk_opt = Some(VIRTUAL_KEY(0x85)),
+            "F23" => vk_opt = Some(VIRTUAL_KEY(0x86)),
+            "F24" => vk_opt = Some(VIRTUAL_KEY(0x87)),
+            // 特殊控制键
             "SPACE" => vk_opt = Some(VIRTUAL_KEY(0x20)),
             "TAB" => vk_opt = Some(VIRTUAL_KEY(0x09)),
+            "ENTER" | "RETURN" => vk_opt = Some(VIRTUAL_KEY(0x0D)),
             "ESC" | "ESCAPE" => vk_opt = Some(VIRTUAL_KEY(0x1B)),
+            "BACKSPACE" | "BACK" => vk_opt = Some(VIRTUAL_KEY(0x08)),
+            "DELETE" | "DEL" => vk_opt = Some(VIRTUAL_KEY(0x2E)),
+            "INSERT" | "INS" => vk_opt = Some(VIRTUAL_KEY(0x2D)),
+            "HOME" => vk_opt = Some(VIRTUAL_KEY(0x24)),
+            "END" => vk_opt = Some(VIRTUAL_KEY(0x23)),
+            "PAGEUP" | "PGUP" | "PRIOR" => vk_opt = Some(VIRTUAL_KEY(0x21)),
+            "PAGEDOWN" | "PGDN" | "NEXT" => vk_opt = Some(VIRTUAL_KEY(0x22)),
+            "UP" => vk_opt = Some(VIRTUAL_KEY(0x26)),
+            "DOWN" => vk_opt = Some(VIRTUAL_KEY(0x28)),
+            "LEFT" => vk_opt = Some(VIRTUAL_KEY(0x25)),
+            "RIGHT" => vk_opt = Some(VIRTUAL_KEY(0x27)),
+            // 标点符号与 OEM 按键
+            "`" | "~" | "GRAVE" | "TILDE" => vk_opt = Some(VIRTUAL_KEY(0xC0)),
+            "-" | "_" | "MINUS" => vk_opt = Some(VIRTUAL_KEY(0xBD)),
+            "=" | "+" | "EQUAL" | "PLUS" => vk_opt = Some(VIRTUAL_KEY(0xBB)),
+            "[" | "{" | "BRACKETLEFT" => vk_opt = Some(VIRTUAL_KEY(0xDB)),
+            "]" | "}" | "BRACKETRIGHT" => vk_opt = Some(VIRTUAL_KEY(0xDD)),
+            ";" | ":" | "SEMICOLON" => vk_opt = Some(VIRTUAL_KEY(0xBA)),
+            "'" | "\"" | "QUOTE" => vk_opt = Some(VIRTUAL_KEY(0xDE)),
+            "," | "<" | "COMMA" => vk_opt = Some(VIRTUAL_KEY(0xBC)),
+            "." | ">" | "PERIOD" | "DOT" => vk_opt = Some(VIRTUAL_KEY(0xBE)),
+            "/" | "?" | "SLASH" => vk_opt = Some(VIRTUAL_KEY(0xBF)),
+            "\\" | "|" | "BACKSLASH" => vk_opt = Some(VIRTUAL_KEY(0xDC)),
+            // 单字母或数字
+            s if s.len() == 1 => {
+                let c = s.chars().next().unwrap();
+                if c.is_ascii_alphabetic() {
+                    vk_opt = Some(VIRTUAL_KEY(c.to_ascii_uppercase() as u16));
+                } else if c.is_ascii_digit() {
+                    vk_opt = Some(VIRTUAL_KEY(c as u16));
+                }
+            }
             _ => {}
         }
     }

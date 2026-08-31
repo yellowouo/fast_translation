@@ -190,42 +190,40 @@ async fn main() -> Result<()> {
                             continue;
                         }
 
-                        // 5. 进行选中文本获取
+                        // 5. 异步获取选中文本（避免 UI Automation 耗时操作阻塞全局事件与快捷键监听）
                         let drag_fallback = cfg.lock().unwrap().hotkey.drag_copy_fallback;
-                        let text = sr.get_selection_hybrid(dragged && drag_fallback && is_client);
-
-                        let _ = slint::invoke_from_event_loop(move || {
-                            match text {
-                                Some(ref t) => {
-                                    *TEXT.lock().unwrap() = t.clone();
-                                    with_fb(|fb| {
-                                        fb.set_visible_ball(true);
-                                        let scale = fb.window().scale_factor();
-                                        let ball_size = (20.0 * scale).round() as i32;
-                                        let (ball_x, ball_y) = clamp_window_position(
-                                            x + (12.0 * scale).round() as i32,
-                                            y - (14.0 * scale).round() as i32,
-                                            ball_size,
-                                            ball_size,
-                                        );
-                                        fb.window().set_position(slint::PhysicalPosition::new(
-                                            ball_x, ball_y,
-                                        ));
-                                        configure_tool_windows();
-                                        let _ = fb.window().show();
-                                    });
+                        let sr_clone = sr.clone();
+                        std::thread::spawn(move || {
+                            let text = sr_clone.get_selection_hybrid(dragged && drag_fallback && is_client);
+                            let _ = slint::invoke_from_event_loop(move || {
+                                match text {
+                                    Some(ref t) => {
+                                        *TEXT.lock().unwrap() = t.clone();
+                                        with_fb(|fb| {
+                                            fb.set_visible_ball(true);
+                                            let scale = fb.window().scale_factor();
+                                            let ball_size = (20.0 * scale).round() as i32;
+                                            let (ball_x, ball_y) = clamp_window_position(
+                                                x + (12.0 * scale).round() as i32,
+                                                y - (14.0 * scale).round() as i32,
+                                                ball_size,
+                                                ball_size,
+                                            );
+                                            fb.window().set_position(slint::PhysicalPosition::new(
+                                                ball_x, ball_y,
+                                            ));
+                                            configure_tool_windows();
+                                            let _ = fb.window().show();
+                                        });
+                                    }
+                                    None => { with_fb(|fb| { let _ = fb.window().hide(); }); }
                                 }
-                                None => { with_fb(|fb| { let _ = fb.window().hide(); }); }
-                            }
+                            });
                         });
                     }
 
                     AppEvent::HotKeyTriggered => {
-                        if !TrayIcon::is_enabled() || TrayIcon::is_settings_open() {
-                            continue;
-                        }
-                        let settings_open = with_sw(|sw| sw.window().is_visible());
-                        if settings_open {
+                        if !TrayIcon::is_enabled() {
                             continue;
                         }
                         println!("[App] Global hotkey: open empty translation window at cursor...");
@@ -235,7 +233,6 @@ async fn main() -> Result<()> {
                     }
 
                     AppEvent::OpenSettings => {
-                        TrayIcon::set_settings_open(true);
                         let cfg_clone = cfg.clone();
                         let _ = slint::invoke_from_event_loop(move || {
                             let mut cursor = windows::Win32::Foundation::POINT::default();
@@ -437,17 +434,19 @@ async fn main() -> Result<()> {
                     sw.set_tip_message(slint::SharedString::from(format!("已录制启停快捷键：{}", combo)));
                 }
                 sw.set_recording_target(0);
+                TrayIcon::set_recording_active(false);
             });
         }
     });
 
     settings_win.on_start_recording(|target| {
         println!("[Settings] Hotkey recording started for target {}...", target);
-        TrayIcon::set_settings_open(true);
+        TrayIcon::set_recording_active(true);
     });
 
     settings_win.on_stop_recording(|| {
         println!("[Settings] Hotkey recording canceled/stopped.");
+        TrayIcon::set_recording_active(false);
     });
 
     // ── Settings Window Callbacks ──
@@ -468,6 +467,7 @@ async fn main() -> Result<()> {
                 c.hotkey.drag_copy_fallback = drag_fallback;
                 let _ = c.save();
             }
+            TrayIcon::set_recording_active(false);
             TrayIcon::update_hotkeys(&hotkey_str, &toggle_str, enabled);
 
             with_sw(|sw| {
@@ -475,10 +475,9 @@ async fn main() -> Result<()> {
                 sw.set_tip_message(slint::SharedString::from("设置已保存生效！"));
             });
 
-            // 600ms 后自动隐藏设置窗口并恢复全局热键
+            // 600ms 后自动隐藏设置窗口
             let t: &'static slint::Timer = Box::leak(Box::new(slint::Timer::default()));
             t.start(slint::TimerMode::SingleShot, std::time::Duration::from_millis(600), || {
-                TrayIcon::set_settings_open(false);
                 with_sw(|sw| {
                     sw.set_tip_message(slint::SharedString::default());
                     let _ = sw.window().hide();
@@ -489,7 +488,7 @@ async fn main() -> Result<()> {
 
     settings_win.on_close_window(|| {
         SETTINGS_DRAGGING.store(false, std::sync::atomic::Ordering::Relaxed);
-        TrayIcon::set_settings_open(false);
+        TrayIcon::set_recording_active(false);
         with_sw(|sw| {
             sw.set_recording_target(0);
             sw.set_tip_message(slint::SharedString::default());
@@ -690,7 +689,7 @@ fn configure_tool_windows() {
     }
 }
 
-/// 将 Slint 接收到的按键事件格式化为类似 "Alt+Q", "Ctrl+Shift+D", "F10" 的规范字符串
+/// 将 Slint 接收到的按键事件格式化为类似 "Alt+Q", "Ctrl+Shift+D", "F10", "Alt+`" 的规范字符串
 fn format_recorded_hotkey(
     key: &str,
     ctrl: bool,
@@ -713,7 +712,9 @@ fn format_recorded_hotkey(
         " " => "Space".to_string(),
         "\t" => "Tab".to_string(),
         "\r" | "\n" => "Enter".to_string(),
-        "\u{001b}" => return None,
+        "\u{001b}" => return None, // Esc (取消录制)
+        "\u{0008}" => "Backspace".to_string(),
+        "\u{007f}" => "Delete".to_string(),
         s if s.chars().count() == 1 => {
             let c = s.chars().next().unwrap();
             match c {
@@ -729,7 +730,22 @@ fn format_recorded_hotkey(
                 '\u{f70d}' => "F10".to_string(),
                 '\u{f70e}' => "F11".to_string(),
                 '\u{f70f}' => "F12".to_string(),
-                '\u{f700}'..='\u{f73f}' => return None, // 其他功能键
+                '\u{f700}' => "Up".to_string(),
+                '\u{f701}' => "Down".to_string(),
+                '\u{f702}' => "Left".to_string(),
+                '\u{f703}' => "Right".to_string(),
+                '\u{f700}'..='\u{f73f}' => return None,
+                '`' | '~' => "`".to_string(),
+                '-' | '_' => "-".to_string(),
+                '=' | '+' => "=".to_string(),
+                '[' | '{' => "[".to_string(),
+                ']' | '}' => "]".to_string(),
+                ';' | ':' => ";".to_string(),
+                '\'' | '"' => "'".to_string(),
+                ',' | '<' => ",".to_string(),
+                '.' | '>' => ".".to_string(),
+                '/' | '?' => "/".to_string(),
+                '\\' | '|' => "\\".to_string(),
                 c if c.is_alphanumeric() => c.to_uppercase().to_string(),
                 _ => return None,
             }
