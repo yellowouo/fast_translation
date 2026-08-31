@@ -20,7 +20,7 @@ auto_translate = true
 # 全局唤醒翻译快捷键（支持在右键托盘“设置”中可视化修改）
 translate = "Alt+Q"
 # 全局启用/禁用程序快捷键（随时一键暂停/恢复划词翻译）
-toggle = "Alt+W"
+toggle = "Alt+M"
 # 是否启用划词与全局快捷键
 enabled = true
 # 拖拽划词取词降级模拟复制

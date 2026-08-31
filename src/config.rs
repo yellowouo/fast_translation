@@ -69,7 +69,7 @@ fn default_to() -> String { "zh".into() }
 fn default_cache_size() -> usize { 512 }
 fn default_auto_translate() -> bool { true }
 fn default_translate_hotkey() -> String { "Alt+Q".into() }
-fn default_toggle_hotkey() -> String { "Alt+W".into() }
+fn default_toggle_hotkey() -> String { "Alt+M".into() }
 fn default_hotkeys_enabled() -> bool { true }
 fn default_drag_copy_fallback() -> bool { true }
 

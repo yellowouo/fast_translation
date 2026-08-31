@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     println!("[Fast Translation] Tray icon started");
 
     let _keep_alive = KeepAlive::new()?;
-    _keep_alive.window().set_position(slint::LogicalPosition::new(-9999.0, -9999.0));
+    _keep_alive.window().set_position(slint::PhysicalPosition::new(-9999, -9999));
     let _ = _keep_alive.window().show();
 
     let translation_win = TranslationPopup::new()?;
@@ -149,40 +149,33 @@ async fn main() -> Result<()> {
                         y,
                         dragged,
                     } => {
-                        if DRAGGING.load(std::sync::atomic::Ordering::Relaxed)
-                            || SETTINGS_DRAGGING.load(std::sync::atomic::Ordering::Relaxed)
+                        // 1. 如果处于窗口拖动状态，释放拖拽状态并忽略此释放事件
+                        if DRAGGING.swap(false, std::sync::atomic::Ordering::Relaxed)
+                            || SETTINGS_DRAGGING.swap(false, std::sync::atomic::Ordering::Relaxed)
                         {
-                            DRAGGING.store(false, std::sync::atomic::Ordering::Relaxed);
-                            SETTINGS_DRAGGING.store(false, std::sync::atomic::Ordering::Relaxed);
                             continue;
                         }
 
-                        // 判断是否点击在翻译弹窗内部
-                        let inside_popup = with_tw(|tw| {
-                            if !tw.window().is_visible() { return false; }
-                            let pos = tw.window().position();
-                            let size = tw.window().size();
-                            let (px, py) = (x as f32, y as f32);
-                            let (wx, wy) = (pos.x as f32, pos.y as f32);
-                            let (ww, wh) = (size.width as f32, size.height as f32);
-                            px >= wx - 4.0 && px <= wx + ww + 4.0
-                                && py >= wy - 4.0 && py <= wy + wh + 4.0
-                        });
-                        if inside_popup { continue; }
+                        // 2. 检测鼠标释放点是否在当前进程的任何窗口（弹窗、设置窗口、悬浮球）内部
+                        let pt = windows::Win32::Foundation::POINT { x, y };
+                        let hit_hwnd = unsafe { windows::Win32::UI::WindowsAndMessaging::WindowFromPoint(pt) };
+                        let mut hit_pid = 0;
+                        if !hit_hwnd.is_invalid() && hit_hwnd.0 != std::ptr::null_mut() {
+                            unsafe {
+                                windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
+                                    hit_hwnd,
+                                    Some(&mut hit_pid),
+                                );
+                            }
+                        }
+                        let is_click_inside_our_app = hit_pid == std::process::id();
 
-                        // 判断是否点击在设置窗口内部
-                        let inside_settings = with_sw(|sw| {
-                            if !sw.window().is_visible() { return false; }
-                            let pos = sw.window().position();
-                            let size = sw.window().size();
-                            let (px, py) = (x as f32, y as f32);
-                            let (wx, wy) = (pos.x as f32, pos.y as f32);
-                            let (ww, wh) = (size.width as f32, size.height as f32);
-                            px >= wx - 4.0 && px <= wx + ww + 4.0
-                                && py >= wy - 4.0 && py <= wy + wh + 4.0
-                        });
-                        if inside_settings { continue; }
+                        if is_click_inside_our_app {
+                            // 用户点击在我们自己的窗口内部（如点击复制/朗读按钮、输入框、标题栏拖拽区域等），绝不关闭窗口
+                            continue;
+                        }
 
+                        // 3. 用户点击在外部其他应用或桌面上：隐藏翻译弹窗与悬浮球
                         with_tw(|tw| { let _ = tw.window().hide(); });
 
                         if !TrayIcon::is_enabled() {
@@ -190,13 +183,14 @@ async fn main() -> Result<()> {
                             continue;
                         }
 
-                        // 过滤非客户区拖拽（例如拖拽窗口标题栏、缩放边框、滚动条、任务栏或桌面）
+                        // 4. 过滤非客户区拖拽（例如拖拽外部窗口标题栏、边框、滚动条、任务栏或桌面）
                         let is_client = is_valid_client_drag(down_x, down_y, x, y);
                         if dragged && !is_client {
                             with_fb(|fb| { let _ = fb.window().hide(); });
                             continue;
                         }
 
+                        // 5. 进行选中文本获取
                         let drag_fallback = cfg.lock().unwrap().hotkey.drag_copy_fallback;
                         let text = sr.get_selection_hybrid(dragged && drag_fallback && is_client);
 
@@ -206,10 +200,15 @@ async fn main() -> Result<()> {
                                     *TEXT.lock().unwrap() = t.clone();
                                     with_fb(|fb| {
                                         fb.set_visible_ball(true);
+                                        let scale = fb.window().scale_factor();
+                                        let ball_size = (20.0 * scale).round() as i32;
                                         let (ball_x, ball_y) = clamp_window_position(
-                                            (x + 12) as f32, (y - 14) as f32, 20.0, 20.0,
+                                            x + (12.0 * scale).round() as i32,
+                                            y - (14.0 * scale).round() as i32,
+                                            ball_size,
+                                            ball_size,
                                         );
-                                        fb.window().set_position(slint::LogicalPosition::new(
+                                        fb.window().set_position(slint::PhysicalPosition::new(
                                             ball_x, ball_y,
                                         ));
                                         configure_tool_windows();
@@ -258,13 +257,16 @@ async fn main() -> Result<()> {
                                 sw.set_recording_target(0);
                                 sw.set_tip_message(slint::SharedString::default());
 
+                                let scale = sw.window().scale_factor();
+                                let win_w = (380.0 * scale).round() as i32;
+                                let win_h = (350.0 * scale).round() as i32;
                                 let (sw_x, sw_y) = clamp_window_position(
-                                    (cursor.x - 190).max(50) as f32,
-                                    (cursor.y - 400).max(50) as f32,
-                                    380.0,
-                                    350.0,
+                                    cursor.x - win_w / 2,
+                                    cursor.y - win_h - (20.0 * scale).round() as i32,
+                                    win_w,
+                                    win_h,
                                 );
-                                sw.window().set_position(slint::LogicalPosition::new(
+                                sw.window().set_position(slint::PhysicalPosition::new(
                                     sw_x, sw_y,
                                 ));
                                 configure_tool_windows();
@@ -359,15 +361,15 @@ async fn main() -> Result<()> {
             DRAG_ANCHOR_X.store(cursor.x, Ordering::Relaxed);
             DRAG_ANCHOR_Y.store(cursor.y, Ordering::Relaxed);
             let pos = WIN.lock().unwrap().as_ref().unwrap().0.window().position();
-            WIN_ANCHOR_X.store(pos.x as i32, Ordering::Relaxed);
-            WIN_ANCHOR_Y.store(pos.y as i32, Ordering::Relaxed);
+            WIN_ANCHOR_X.store(pos.x, Ordering::Relaxed);
+            WIN_ANCHOR_Y.store(pos.y, Ordering::Relaxed);
         } else {
             let dx = cursor.x - DRAG_ANCHOR_X.load(Ordering::Relaxed);
             let dy = cursor.y - DRAG_ANCHOR_Y.load(Ordering::Relaxed);
             let nx = WIN_ANCHOR_X.load(Ordering::Relaxed) + dx;
             let ny = WIN_ANCHOR_Y.load(Ordering::Relaxed) + dy;
             with_tw(|tw| {
-                tw.window().set_position(slint::LogicalPosition::new(nx as f32, ny as f32));
+                tw.window().set_position(slint::PhysicalPosition::new(nx, ny));
             });
         }
     });
@@ -505,15 +507,15 @@ async fn main() -> Result<()> {
             SETTINGS_DRAG_ANCHOR_X.store(cursor.x, Ordering::Relaxed);
             SETTINGS_DRAG_ANCHOR_Y.store(cursor.y, Ordering::Relaxed);
             let pos = SETTINGS_WIN.lock().unwrap().as_ref().unwrap().0.window().position();
-            SETTINGS_WIN_ANCHOR_X.store(pos.x as i32, Ordering::Relaxed);
-            SETTINGS_WIN_ANCHOR_Y.store(pos.y as i32, Ordering::Relaxed);
+            SETTINGS_WIN_ANCHOR_X.store(pos.x, Ordering::Relaxed);
+            SETTINGS_WIN_ANCHOR_Y.store(pos.y, Ordering::Relaxed);
         } else {
             let dx = cursor.x - SETTINGS_DRAG_ANCHOR_X.load(Ordering::Relaxed);
             let dy = cursor.y - SETTINGS_DRAG_ANCHOR_Y.load(Ordering::Relaxed);
             let nx = SETTINGS_WIN_ANCHOR_X.load(Ordering::Relaxed) + dx;
             let ny = SETTINGS_WIN_ANCHOR_Y.load(Ordering::Relaxed) + dy;
             with_sw(|sw| {
-                sw.window().set_position(slint::LogicalPosition::new(nx as f32, ny as f32));
+                sw.window().set_position(slint::PhysicalPosition::new(nx, ny));
             });
         }
     });
@@ -521,7 +523,7 @@ async fn main() -> Result<()> {
     // ── Release drag on mouse up ──
     {
         let t: &'static slint::Timer = Box::leak(Box::new(slint::Timer::default()));
-        t.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(50), || {
+        t.start(slint::TimerMode::Repeated, std::time::Duration::from_millis(30), || {
             if DRAGGING.load(std::sync::atomic::Ordering::Relaxed)
                 || SETTINGS_DRAGGING.load(std::sync::atomic::Ordering::Relaxed)
             {
@@ -566,14 +568,24 @@ fn show_translation(tr: &Arc<AsyncMutex<BaiduTranslator>>) {
     tw.set_is_loading(true);
     tw.set_error_message(slint::SharedString::default());
 
-    let win_h = (tw.window().size().height as f32).max(300.0);
+    let scale = tw.window().scale_factor();
+    let win_w = if tw.window().size().width > 0 {
+        tw.window().size().width as i32
+    } else {
+        (440.0 * scale).round() as i32
+    };
+    let win_h = if tw.window().size().height > 0 {
+        tw.window().size().height as i32
+    } else {
+        (300.0 * scale).round() as i32
+    };
     let (clamped_x, clamped_y) = clamp_window_position(
-        pos.x as f32 + 24.0,
-        pos.y as f32,
-        440.0,
+        pos.x + (24.0 * scale).round() as i32,
+        pos.y,
+        win_w,
         win_h,
     );
-    tw.window().set_position(slint::LogicalPosition::new(clamped_x, clamped_y));
+    tw.window().set_position(slint::PhysicalPosition::new(clamped_x, clamped_y));
     configure_tool_windows();
     let _ = tw.window().show();
 
@@ -610,13 +622,16 @@ fn show_empty_translation_at_cursor() {
     tw.set_is_loading(false);
     tw.set_error_message(slint::SharedString::default());
 
+    let scale = tw.window().scale_factor();
+    let win_w = (440.0 * scale).round() as i32;
+    let win_h = (220.0 * scale).round() as i32;
     let (clamped_x, clamped_y) = clamp_window_position(
-        (cursor.x + 16) as f32,
-        (cursor.y - 16) as f32,
-        440.0,
-        220.0,
+        cursor.x + (16.0 * scale).round() as i32,
+        cursor.y - (16.0 * scale).round() as i32,
+        win_w,
+        win_h,
     );
-    tw.window().set_position(slint::LogicalPosition::new(clamped_x, clamped_y));
+    tw.window().set_position(slint::PhysicalPosition::new(clamped_x, clamped_y));
     configure_tool_windows();
     let _ = tw.window().show();
 }
@@ -625,14 +640,14 @@ fn copy_to_clipboard(text: &str) {
     selection::write_clipboard_text(text);
 }
 
-/// 将当前 UI 线程中的浮窗设置扩展样式 WS_EX_TOOLWINDOW 和 WS_EX_NOACTIVATE，
-/// 并移除 WS_EX_APPWINDOW，防止浮窗和保活窗口在 Windows 任务栏和 Alt+Tab 中出现
+/// 将当前 UI 线程中的浮窗设置扩展样式 WS_EX_TOOLWINDOW，防止在任务栏中出现；
+/// 针对悬浮球和保活窗口附加 WS_EX_NOACTIVATE（不抢前台焦点），而弹窗与设置窗口保留交互激活能力
 fn configure_tool_windows() {
     use windows::Win32::Foundation::{BOOL, HWND, LPARAM};
     use windows::Win32::System::Threading::GetCurrentThreadId;
     use windows::Win32::UI::WindowsAndMessaging::{
-        EnumThreadWindows, GetClassNameW, GetWindowLongW, SetWindowLongW, GWL_EXSTYLE,
-        WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+        EnumThreadWindows, GetClassNameW, GetWindowLongW, GetWindowTextW, SetWindowLongW,
+        GWL_EXSTYLE, WS_EX_APPWINDOW, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
     };
 
     unsafe extern "system" fn enum_proc(hwnd: HWND, _: LPARAM) -> BOOL {
@@ -641,10 +656,26 @@ fn configure_tool_windows() {
         if len > 0 {
             let name = String::from_utf16_lossy(&class_name[..len as usize]);
             if !name.contains("Tray") {
+                let mut title_buf = [0u16; 256];
+                let title_len = GetWindowTextW(hwnd, &mut title_buf);
+                let title = if title_len > 0 {
+                    String::from_utf16_lossy(&title_buf[..title_len as usize])
+                } else {
+                    String::new()
+                };
+
                 let style = GetWindowLongW(hwnd, GWL_EXSTYLE);
-                let target = (style & !(WS_EX_APPWINDOW.0 as i32))
-                    | (WS_EX_TOOLWINDOW.0 as i32)
-                    | (WS_EX_NOACTIVATE.0 as i32);
+                let is_non_interactive = title.contains("Ball") || title.contains("KeepAlive");
+
+                let target = if is_non_interactive {
+                    (style & !(WS_EX_APPWINDOW.0 as i32))
+                        | (WS_EX_TOOLWINDOW.0 as i32)
+                        | (WS_EX_NOACTIVATE.0 as i32)
+                } else {
+                    (style & !(WS_EX_APPWINDOW.0 as i32 | WS_EX_NOACTIVATE.0 as i32))
+                        | (WS_EX_TOOLWINDOW.0 as i32)
+                };
+
                 if style != target {
                     SetWindowLongW(hwnd, GWL_EXSTYLE, target);
                 }
@@ -775,17 +806,14 @@ fn is_valid_client_drag(down_x: i32, down_y: i32, up_x: i32, up_y: i32) -> bool 
     true
 }
 
-/// 将窗口坐标限制在当前显示器的工作区（排除任务栏）内，防止窗口在屏幕边缘或多显示器边界处被截断
-fn clamp_window_position(x: f32, y: f32, width: f32, height: f32) -> (f32, f32) {
+/// 将窗口物理坐标限制在当前显示器的工作区（排除任务栏）内，防止窗口在屏幕边缘或多显示器边界处被截断
+fn clamp_window_position(x: i32, y: i32, width: i32, height: i32) -> (i32, i32) {
     use windows::Win32::Foundation::{POINT, RECT};
     use windows::Win32::Graphics::Gdi::{
         GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTONEAREST,
     };
 
-    let pt = POINT {
-        x: x as i32,
-        y: y as i32,
-    };
+    let pt = POINT { x, y };
     let hmon = unsafe { MonitorFromPoint(pt, MONITOR_DEFAULTTONEAREST) };
     let mut mi = MONITORINFO {
         cbSize: std::mem::size_of::<MONITORINFO>() as u32,
@@ -803,11 +831,11 @@ fn clamp_window_position(x: f32, y: f32, width: f32, height: f32) -> (f32, f32) 
         }
     };
 
-    let margin = 12.0;
-    let min_x = work_area.left as f32 + margin;
-    let max_x = (work_area.right as f32 - width - margin).max(min_x);
-    let min_y = work_area.top as f32 + margin;
-    let max_y = (work_area.bottom as f32 - height - margin).max(min_y);
+    let margin = 12;
+    let min_x = work_area.left + margin;
+    let max_x = (work_area.right - width - margin).max(min_x);
+    let min_y = work_area.top + margin;
+    let max_y = (work_area.bottom - height - margin).max(min_y);
 
     let clamped_x = x.clamp(min_x, max_x);
     let clamped_y = y.clamp(min_y, max_y);

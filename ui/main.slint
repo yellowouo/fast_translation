@@ -2,7 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 
 // ── Floating ball ────────────────────────────────────────────────
 export component FloatingBall inherits Window {
-    title: "Fast Translation";
+    title: "Fast Translation Ball";
 
     no-frame: true;
     always-on-top: true;
@@ -28,7 +28,7 @@ export component FloatingBall inherits Window {
 }
 
 export component KeepAlive inherits Window {
-    title: "Fast Translation";
+    title: "Fast Translation KeepAlive";
 
     width: 0px;
     height: 0px;
@@ -134,7 +134,7 @@ component KeyboardIcon inherits Rectangle {
 // UI 沙盒：只包含 TranslationPopup，浅色主题（style.jpg 风格）。
 // 所有高度由文本实测派生，无估算像素值。
 export component TranslationPopup inherits Window {
-    title: "Fast Translation";
+    title: "Fast Translation Popup";
 
     no-frame: true;
     always-on-top: true;
@@ -498,7 +498,7 @@ export component TranslationPopup inherits Window {
 
 // ── 快捷键设置窗口（风格与 TranslationPopup 保持一致） ────────────────────────
 export component HotkeySettingsWindow inherits Window {
-    title: "Fast Translation - 设置";
+    title: "Fast Translation Settings";
 
     no-frame: true;
     always-on-top: true;
